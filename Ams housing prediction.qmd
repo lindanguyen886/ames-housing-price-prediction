@@ -1,0 +1,375 @@
+---
+title: "Ams housing: Sale Price Prediction"
+author: "Linda Nguyen"
+format:
+  html: default
+---
+
+# AMS HOUSING: SALE PRICE PREDICTION
+
+## 1. Pricing Decision Context
+
+The purpose of this project is to support a **pre-listing pricing decision** for residential properties using historical transaction data from Ames, Iowa.
+
+Specifically, the analysis aims to answer the following decision question:
+
+> *Given the characteristics of a house, which factors have the strongest impact on sale price? What is a reasonable market price, and how confident can we be in that estimate?*
+
+This decision framework reflects a real-world scenario in which pricing must be determined **before** a property is listed, using limited but structured information.
+
+## 2. **Exploratory Data Analysis**
+
+### Data Source
+
+This analysis uses the Ames Housing dataset, which contains detailed records of residential property sales, including structural characteristics, quality assessments, and location information.
+
+The dataset is treated as a proxy for market knowledge available at the time of pricing.
+
+```{r}
+dat <- modeldata::ames
+```
+
+The data dictionary can be found on the internet
+
+### Packages
+
+```{r}
+# check if 'librarian' is installed and if not, install it
+if (! "librarian" %in% rownames(installed.packages()) ){
+  install.packages("librarian")
+}
+  
+# load packages if not already loaded
+librarian::shelf(
+  tidyverse, magrittr, tidymodels, modeldata, ranger, rsample, broom, recipes, parsnip, ggplot2, psych)
+
+# set the efault theme for plotting
+theme_set(theme_bw(base_size = 18) + theme(legend.position = "top"))
+```
+
+### Data Summary
+
+```{r}
+skimr::skim(dat)
+```
+
+<div>
+
+There are 2930 observations and 74 variables. Variable types: 40 categorical variables, 34 numeric variables. There is no missing data. We can group the variables as follow:
+
+-   **Location**: Neighborhood, MS_Zoning, Street, Alley, Lot_Config, Land_Contour, Lot_Shape, Land_Slope, Condition_1, Condition_2
+
+-   **Size:** Lot_Frontage Lot_Area, Gr_Liv_Area, First_Flr_SF, Second_Flr_SF, Low_Qual_Fin_SF, Total_Bsmt_SF, BsmtFin_SF_1, BsmtFin_SF_2, Bsmt_Unf_SF, Garage_Area, Mas_Vnr_Area
+
+-   **Quality/Condition:** Overall_Cond, Exter_Qual, Exter_Cond Bsmt_Qual, Bsmt_Cond, Heating_QC, Kitchen_Qual, Fireplace_Qu, Garage_Qual, Garage_Cond, Pool_QC
+
+-   **Age:** Year_Built, Year_Remod_Add, Garage_Yr_Blt
+
+-   **Amenities:** Bedroom_AbvGr, Kitchen_AbvGr, TotRms_AbvGrd, Full_Bath, Half_Bath, Bsmt_Full_Bath, Bsmt_Half_Bath, Fireplaces, Garage_Cars, Garage_Type, Garage_Finish, Fence, Misc_Feature, Misc_Val
+
+**To reduce redundancy and multicollinearity, the analysis focuses on key feature groups and selects representative variables from each group to use as predictors.**
+
+</div>
+
+### Understanding the Response Variable
+
+```{r}
+ggplot(data = dat, aes(x = Sale_Price)) + geom_histogram(bins = 30) + labs(title = "Histogram of Sale Price", x = "Sale Price", y ="Count")
+```
+
+<div>
+
+**Insight:**
+
+-   The majority of homes sell at moderate prices, while a small number of high-end properties drive a long right tail**:**
+
+    -   Peak around **\$120k–\$200k**
+
+    -   Prices extend up to **\$700k+**
+
+Because the distribution is not symmetric, modeling sale price on the original scale may violate model assumptions. Therefore, a log transformation of Sale_Price is applied during the modeling stage to improve stability and predictive performance.
+
+</div>
+
+### Numeric Feature Exploration
+
+```{r}
+num_vars <- ames |> select(where(is.numeric)) |> names()
+
+num_corr <- sapply(num_vars, function(v) {
+  cor(ames[[v]], ames$Sale_Price, use = "complete.obs")
+})
+
+sort(abs(num_corr), decreasing = TRUE)
+```
+
+```{r}
+cor(dat$Gr_Liv_Area, dat$Total_Bsmt_SF)
+cor(dat$Gr_Liv_Area, dat$First_Flr_SF)
+```
+
+<div>
+
+<div>
+
+**Strong predictors (\|r\| ≥ 0.6)**
+
+-   Gr_Liv_Area: Strongest size-related driver
+
+-   Garage_Cars: Garage capacity strongly affects price
+
+-   Garage_Area: Similar to Garage_Cars → redundant
+
+-   Total_Bsmt_SF: Basement size strongly affects price but can be overlap with Gr_Liv_Area
+
+-   First_Flr_SF: Overlap with Gr_Liv_Are -\> redundant
+
+-   Year_Built: New home can be sold at higher price
+
+**Numerical Variable selection for each data group:**
+
+-   Size Group: Gr_Liv_Area
+
+-   Amenities Group: Garage_Cars
+
+-   Age group: Year_Built
+
+</div>
+
+</div>
+
+### Categorical Data Exploration
+
+```{r}
+cat_vars <- ames |> select(where(is.factor)) |> names()
+cat_vars
+```
+
+```{r}
+summary(aov(Sale_Price ~ Neighborhood, data = ames))
+summary(aov(Sale_Price ~ Overall_Cond, data = ames))
+```
+
+```{r}
+boxplot(Sale_Price ~ Neighborhood, data = dat)
+boxplot(Sale_Price ~ Overall_Cond, data = dat)
+```
+
+<div>
+
+The ANOVA results and box plots show that sale prices vary significantly across neighborhoods and levels of overall condition.
+
+This suggests that Neighborhood is an appropriate representative variable for location effects, while Overall_Cond effectively captures differences in housing quality.
+
+</div>
+
+### Final Predictor Selection
+
+<div>
+
+<div>
+
+Based on the exploratory analysis, the following variables are identified as the key drivers of housing prices:
+
+-   Location: Neighborhood
+
+-   Size: Gr_Liv_Area
+
+-   Quality: Overall_Cond
+
+-   Amenities: Garage_Cars
+
+-   Age: Year_Built
+
+</div>
+
+</div>
+
+## 3. Modeling Strategy and Evaluation
+
+### Modeling Objective
+
+The objective of modeling is to estimate housing prices **before listing**, using information that would realistically be available at that time.
+
+The modeling approach prioritizes:
+
+-   Out-of-sample predictive performance
+
+-   Interpretability of price drivers
+
+-   Stability across neighborhoods
+
+Rather than maximizing accuracy alone, models are evaluated based on how well they support pricing decisions.
+
+### Evaluation Strategy
+
+To assess model performance, the data is split into training and testing sets. Cross-validation is used within the training set to reduce variance in performance estimates.
+
+The primary evaluation metric is **Root Mean Squared Error (RMSE)**, as it penalizes large pricing errors and is interpretable in currency units.
+
+### Data Splitting and Normalization
+
+```{r}
+#Split train/test data
+set.seed(8740)
+data_split <- initial_split(dat, strata = "Sale_Price", prop = 0.75)
+
+ames_train <- rsample::training(data_split)
+ames_test <- rsample::testing(data_split)
+
+formula <- Sale_Price~Neighborhood + Gr_Liv_Area + Overall_Cond + Garage_Cars + Year_Built
+
+norm_recipe <-
+  recipes::recipe(formula, data = ames_train) %>%
+  recipes::step_center(recipes::all_numeric_predictors()) %>% 
+  recipes::step_scale(recipes::all_numeric_predictors()) %>% 
+  recipes::step_log(all_outcomes(), base = exp(1)) %>% 
+  recipes::step_other(Neighborhood) %>%
+  recipes::step_dummy(recipes::all_nominal_predictors())
+```
+
+### Create models
+
+Create three regression models
+
+-   a base regression model using `lm`
+
+-   a regression model using `glmnet`; set the model parameters `penalty` and `mixture` for tuning
+
+-   a tree model using the `ranger` engine; set the model parameters `min_n` and `trees` for tuning
+
+    ```{r}
+    # Specify the model
+    lm_mod_base <- 
+      parsnip::linear_reg() %>% parsnip::set_mode("regression") %>% parsnip::set_engine("lm")
+    lm_mod_glmnet <- 
+      parsnip::linear_reg(penalty = tune(), mixture = tune()) %>% parsnip::set_mode("regression") %>% parsnip::set_engine("glmnet")
+
+    lm_mod_rforest <- 
+      parsnip::rand_forest(min_n = tune(),trees = tune()) %>% parsnip::set_mode("regression") %>% parsnip::set_engine("ranger")
+    ```
+
+Create bootstrap samples for the training dataset to ensure that all models are evaluated on the same resamples.
+
+```{r}
+set.seed(8740)
+train_resamples <- rsample::bootstraps(ames_train)
+```
+
+### Model Assessment
+
+Create workflows to ensure preprocessing is applied **inside each resample** and a workflow set was used to systematically compare linear, regularized, and tree-based regression models under identical resampling conditions.
+
+```{r}
+all_workflows <- workflowsets::workflow_set(preproc = list(base=norm_recipe), models = list(base = lm_mod_base, glmnet = lm_mod_glmnet, forest = lm_mod_rforest))
+```
+
+```{r}
+# unnest the info column of all_workflows to show the workflow structure 
+all_workflows %>% tidyr::unnest(info)
+```
+
+Tune all the workflow. This will take some time to complete.
+
+```{r}
+all_workflows <- all_workflows %>%
+  workflowsets::workflow_map(
+    verbose = TRUE                # enable logging
+    , resamples = train_resamples # a parameter passed to tune::tune_grid()
+    , grid = 5                    # a parameter passed to tune::tune_grid()
+  )
+```
+
+Get the 'rmse' result metric for each model
+
+```{r}
+all_workflows %>% 
+  dplyr::select(wflow_id,result) %>% 
+  tidyr::unnest(result) %>% 
+  tidyr::unnest(.metrics) %>% 
+  dplyr::filter(.metric == 'rmse') %>% 
+  dplyr::group_by(wflow_id) %>% 
+  dplyr::arrange(desc(.estimate) ) %>% 
+  dplyr::slice(1)
+```
+
+Define the best model.
+
+```{r}
+workflowsets::rank_results(all_workflows, rank_metric = "rmse", select_best = TRUE)
+```
+
+<div>
+
+Based on RMSE, the linear regression model achieved the lowest prediction error among the candidate models.
+
+Although the random forest model achieved a slightly higher R², its RMSE was marginally worse. Since RMSE directly reflects pricing error in monetary terms, minimizing RMSE was prioritized. In addition, the linear model offers greater interpretability, which is important for explaining pricing decisions.
+
+Therefore, the linear regression model was selected as the final model.
+
+</div>
+
+### Model Selection for Prediction
+
+```{r}
+best_model_workflow <- 
+  all_workflows %>% 
+  workflowsets::extract_workflow("base_base")
+```
+
+Finalize the workflow by setting the parameters for the best model
+
+```{r}
+best_model_workflow <- best_model_workflow %>% tune::finalize_workflow(
+    tibble::tibble(trees = 1, min_n = 11) # the name and value of the best-fit parameters from tuning process
+  )
+  best_model_workflow
+  
+```
+
+## 4. Final Model Fitting and Prediction
+
+```{r}
+# Fit with the train set and predict on test set 
+best_fit_results <- best_model_workflow %>%
+  tune::last_fit(split = data_split)
+
+# Get RMSE and R-squared for the test set
+test_metrics <- best_fit_results %>% tune::collect_metrics()
+print("Base Linear Model Metrics:")
+print(test_metrics)
+
+# Compare Predicted vs. True Sale Price
+# Reverse the log transformation for interpretability
+test_predictions <- best_fit_results %>% 
+  tune::collect_predictions() %>%
+  mutate(
+    .pred_actual = exp(.pred),
+    Sale_Price_actual = exp(Sale_Price)
+  )
+
+ggplot(test_predictions, aes(x = Sale_Price_actual, y = .pred_actual)) +
+  geom_point(alpha = 0.5, color = "darkgreen") +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(
+    title = "Actual vs. Predicted Sale Price (Base Linear Model)",
+    subtitle = "Evaluation of pricing accuracy on the test set",
+    x = "Actual Price ($)",
+    y = "Predicted Price ($)"
+  )
+
+```
+
+<div>
+
+The actual versus predicted price plot shows that the model performs well for the majority of homes, particularly in the mid-price range where most transactions occur. Predictions closely follow the 45-degree reference line, indicating good calibration.
+
+The model tends to underpredict very high-priced properties, which may be due to the absence of detailed luxury features in the selected predictors. Overall, the model demonstrates reasonable predictive performance and is suitable for supporting pre-listing pricing decisions.
+
+</div>
+
+## 5. Conclusion
+
+This project demonstrates how historical housing data can be used to support pre-listing pricing decisions. Exploratory analysis identified key price drivers related to location, size, quality, amenities, and age.
+
+Multiple models were evaluated using a consistent resampling framework, and a linear regression model was selected based on its balance of predictive accuracy and interpretability. The final model provides reliable price estimates and can support practical pricing decisions in a real-world setting.
