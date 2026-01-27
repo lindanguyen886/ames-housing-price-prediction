@@ -54,4 +54,4 @@ R, tidyverse, tidymodels, recipes, workflowsets, ranger, Quarto
 
 ## 📄 Project Report
 The full rendered analysis can be viewed here:  
-👉 👉 **[View the PDF report]**(https://github.com/lindanguyen886/ames-housing-price-prediction/blob/main/Ams-housing-prediction.pdf)
+👉 👉 👉 [View the PDF report](https://github.com/lindanguyen886/ames-housing-price-prediction/blob/main/Ams-housing-prediction.pdf)
