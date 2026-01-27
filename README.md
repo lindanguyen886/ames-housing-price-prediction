@@ -52,5 +52,6 @@ Through this project, I improved my understanding of:
 ## Tools
 R, tidyverse, tidymodels, recipes, workflowsets, ranger, Quarto
 
-## Output
-- Full analysis report: `ames-housing-price-prediction.html`
+## 📄 Project Report
+The full rendered analysis can be viewed here:  
+👉 **[View the interactive HTML report](https://lindanguyen886.github.io/ames-housing-price-prediction/)**
