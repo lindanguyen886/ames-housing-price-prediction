@@ -3,7 +3,7 @@
 ## Objective
 This project is a practice-based analysis designed to support pre-listing housing price decisions using historical transaction data from Ames, Iowa.  
 The main purpose of the project is to strengthen my understanding of the complete data analysis and modeling workflow through hands-on implementation.
-## 📄 Project Report
+## Project Report
 The full rendered analysis can be viewed here:  
 👉  [View the interactive HTML report](https://lindanguyen886.github.io/ames-housing-price-prediction/)
 
