@@ -3,6 +3,9 @@
 ## Objective
 This project is a practice-based analysis designed to support pre-listing housing price decisions using historical transaction data from Ames, Iowa.  
 The main purpose of the project is to strengthen my understanding of the complete data analysis and modeling workflow through hands-on implementation.
+## 📄 Project Report
+The full rendered analysis can be viewed here:  
+👉  [View the interactive HTML report](https://lindanguyen886.github.io/ames-housing-price-prediction/)
 
 ## Decision Question
 Given the characteristics of a house, what is a reasonable market price, and how confident can we be in that estimate?
@@ -52,6 +55,4 @@ Through this project, I improved my understanding of:
 ## Tools
 R, tidyverse, tidymodels, recipes, workflowsets, ranger, Quarto
 
-## 📄 Project Report
-The full rendered analysis can be viewed here:  
-👉  [View the interactive HTML report](https://lindanguyen886.github.io/ames-housing-price-prediction/)
+
